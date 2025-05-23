@@ -126,6 +126,11 @@
             text-align: center;
             font-weight: bold;
         }
+        #audio-status {
+            margin-top: 5px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
     </style>
 </head>
 <body>
@@ -166,8 +171,9 @@
         </div>
         
         <div id="song-info">
-            <p>Canzone: "Le tasche piene di sassi" - Jovanotti</p>
-            <p>Carica il tuo file MP3 qui: <input type="file" id="audio-upload" accept="audio/*"></p>
+            <p>Carica il tuo file audio MP3:</p>
+            <input type="file" id="audio-upload" accept="audio/*">
+            <div id="audio-status">Nessun file audio caricato</div>
         </div>
     </div>
 
@@ -177,7 +183,7 @@
         let currentImageIndex = 0;
         let mediaRecorder;
         let recordedChunks = [];
-        let audioBlob;
+        let audioBlob = null;
         let audioElement = new Audio();
         
         // Elementi UI
@@ -189,16 +195,27 @@
         const clearBtn = document.getElementById('clear-btn');
         const imageCount = document.getElementById('image-count');
         const progressContainer = document.getElementById('progress-container');
+        const audioStatus = document.getElementById('audio-status');
         
         // Aggiorna il conteggio immagini
         function updateImageCount() {
             imageCount.textContent = `${images.length} immagini caricate`;
-            generateBtn.disabled = images.length === 0;
+            generateBtn.disabled = images.length === 0 || audioBlob === null;
         }
         
         // Aggiungi immagini all'array
         function addImages(files) {
             let imagesAdded = 0;
+            let validFiles = 0;
+            
+            // Conta prima i file validi
+            for (let i = 0; i < files.length; i++) {
+                if (files[i].type.match('image.*')) {
+                    validFiles++;
+                }
+            }
+            
+            if (validFiles === 0) return;
             
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
@@ -209,7 +226,7 @@
                     images.push(e.target.result);
                     imagesAdded++;
                     
-                    if (imagesAdded === files.length || images.length === 1) {
+                    if (imagesAdded === validFiles || images.length === 1) {
                         showCurrentImage();
                     }
                     
@@ -284,9 +301,21 @@
             const file = e.target.files[0];
             if (!file) return;
             
-            audioBlob = file;
-            audioElement.src = URL.createObjectURL(file);
-            document.querySelector('#song-info p:last-child').textContent = `Canzone caricata: ${file.name}`;
+            // Verifica che sia un file audio
+            if (!file.type.match('audio.*') && !file.name.match(/\.(mp3|wav|ogg)$/i)) {
+                alert('Per favore carica un file audio (MP3, WAV o OGG)');
+                return;
+            }
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                audioBlob = new Blob([e.target.result], { type: file.type });
+                audioElement.src = URL.createObjectURL(audioBlob);
+                audioStatus.textContent = `File audio caricato: ${file.name}`;
+                audioStatus.style.color = '#4CAF50';
+                updateImageCount();
+            };
+            reader.readAsArrayBuffer(file);
         });
         
         // Mostra l'immagine corrente
@@ -301,7 +330,12 @@
             currentImageIndex = 0;
             imageUpload.value = '';
             zipUpload.value = '';
+            audioUpload.value = '';
+            audioBlob = null;
+            audioElement.src = '';
             document.getElementById('image-container').innerHTML = '<p style="color: white;">L\'anteprima del video apparirà qui</p>';
+            audioStatus.textContent = 'Nessun file audio caricato';
+            audioStatus.style.color = '#555';
             updateImageCount();
             progressContainer.style.display = 'none';
             downloadBtn.disabled = true;

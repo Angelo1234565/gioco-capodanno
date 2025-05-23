@@ -46,19 +46,26 @@
             display: flex;
             justify-content: center;
             margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
         }
         button {
             background-color: #e91e63;
             color: white;
             border: none;
             padding: 10px 20px;
-            margin: 0 5px;
             border-radius: 5px;
             cursor: pointer;
             font-size: 16px;
+            flex: 1;
+            min-width: 150px;
         }
         button:hover {
             background-color: #c2185b;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
         }
         input[type="file"] {
             display: none;
@@ -71,13 +78,22 @@
             background-color: #4CAF50;
             color: white;
             border-radius: 5px;
-            margin-right: 10px;
+            text-align: center;
+            flex: 1;
+            min-width: 150px;
         }
         .custom-file-upload:hover {
             background-color: #45a049;
         }
+        .file-inputs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
         #progress-container {
             margin-top: 20px;
+            display: none;
         }
         progress {
             width: 100%;
@@ -94,6 +110,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            flex-wrap: wrap;
+            gap: 10px;
         }
         #timing-controls label {
             margin-right: 10px;
@@ -101,13 +119,19 @@
         #duration {
             width: 50px;
             text-align: center;
+            padding: 5px;
+        }
+        #image-count {
+            margin-top: 10px;
+            text-align: center;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Crea un video per la tua ragazza</h1>
-        <p>Carica le tue immagini e crea un video con "Le tasche piene di sassi" di Jovanotti</p>
+        <p>Carica le tue immagini (singole o in ZIP) e crea un video con "Le tasche piene di sassi" di Jovanotti</p>
         
         <div id="preview">
             <div id="image-container">
@@ -115,11 +139,20 @@
             </div>
         </div>
         
-        <div>
+        <div class="file-inputs">
             <label for="image-upload" class="custom-file-upload">Seleziona Immagini</label>
             <input id="image-upload" type="file" accept="image/*" multiple>
-            <button id="generate-btn">Genera Video</button>
+            
+            <label for="zip-upload" class="custom-file-upload">Carica ZIP</label>
+            <input id="zip-upload" type="file" accept=".zip">
+        </div>
+        
+        <div id="image-count">0 immagini caricate</div>
+        
+        <div id="controls">
+            <button id="generate-btn" disabled>Genera Video</button>
             <button id="download-btn" disabled>Scarica Video</button>
+            <button id="clear-btn">Azzera Tutto</button>
         </div>
         
         <div id="timing-controls">
@@ -127,49 +160,45 @@
             <input type="number" id="duration" value="3" min="1" max="10">
         </div>
         
-        <div id="progress-container" style="display: none;">
+        <div id="progress-container">
             <p>Generazione del video in corso...</p>
             <progress id="progress-bar" value="0" max="100"></progress>
         </div>
         
         <div id="song-info">
             <p>Canzone: "Le tasche piene di sassi" - Jovanotti</p>
+            <p>Carica il tuo file MP3 qui: <input type="file" id="audio-upload" accept="audio/*"></p>
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.2/RecordRTC.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         const images = [];
         let currentImageIndex = 0;
         let mediaRecorder;
         let recordedChunks = [];
         let audioBlob;
-        let audioContext;
-        let audioBuffer;
         let audioElement = new Audio();
         
-        // Carica la canzone (sostituisci con il percorso del tuo file MP3)
-        // Nota: per copyright dovresti usare un file che hai legalmente
-        const songUrl = 'https://example.com/path/to/le-tasche-piene-di-sassi.mp3';
+        // Elementi UI
+        const imageUpload = document.getElementById('image-upload');
+        const zipUpload = document.getElementById('zip-upload');
+        const audioUpload = document.getElementById('audio-upload');
+        const generateBtn = document.getElementById('generate-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const imageCount = document.getElementById('image-count');
+        const progressContainer = document.getElementById('progress-container');
         
-        // Inizializza l'audio
-        fetch(songUrl)
-            .then(response => response.blob())
-            .then(blob => {
-                audioBlob = blob;
-                audioElement.src = URL.createObjectURL(blob);
-            })
-            .catch(error => {
-                console.error("Errore nel caricamento della canzone:", error);
-                alert("Assicurati di avere il file MP3 della canzone nella stessa cartella o di aver specificato l'URL corretto nel codice.");
-            });
+        // Aggiorna il conteggio immagini
+        function updateImageCount() {
+            imageCount.textContent = `${images.length} immagini caricate`;
+            generateBtn.disabled = images.length === 0;
+        }
         
-        document.getElementById('image-upload').addEventListener('change', function(e) {
-            const files = e.target.files;
-            if (files.length === 0) return;
-            
-            images.length = 0; // Svuota l'array
-            currentImageIndex = 0;
+        // Aggiungi immagini all'array
+        function addImages(files) {
+            let imagesAdded = 0;
             
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
@@ -178,36 +207,121 @@
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     images.push(e.target.result);
-                    if (images.length === 1) {
+                    imagesAdded++;
+                    
+                    if (imagesAdded === files.length || images.length === 1) {
                         showCurrentImage();
                     }
+                    
+                    updateImageCount();
                 };
                 reader.readAsDataURL(file);
             }
+        }
+        
+        // Carica immagini da ZIP
+        zipUpload.addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
             
-            if (images.length > 0) {
-                document.getElementById('generate-btn').disabled = false;
+            try {
+                const zip = await JSZip.loadAsync(file);
+                const imageFiles = [];
+                
+                // Filtra solo le immagini
+                zip.forEach((relativePath, zipEntry) => {
+                    if (!zipEntry.dir && /\.(jpg|jpeg|png|gif|bmp)$/i.test(zipEntry.name)) {
+                        imageFiles.push(zipEntry);
+                    }
+                });
+                
+                if (imageFiles.length === 0) {
+                    alert('Nessuna immagine trovata nel file ZIP.');
+                    return;
+                }
+                
+                // Resetta l'array delle immagini
+                images.length = 0;
+                currentImageIndex = 0;
+                
+                // Carica le immagini
+                let loadedCount = 0;
+                for (const zipEntry of imageFiles) {
+                    const blob = await zipEntry.async('blob');
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        images.push(e.target.result);
+                        loadedCount++;
+                        
+                        if (loadedCount === 1) {
+                            showCurrentImage();
+                        }
+                        
+                        if (loadedCount === imageFiles.length) {
+                            updateImageCount();
+                            alert(`Caricate ${imageFiles.length} immagini dal file ZIP.`);
+                        }
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            } catch (error) {
+                console.error("Errore nel caricamento del ZIP:", error);
+                alert("Errore nel caricamento del file ZIP. Assicurati che sia un file ZIP valido.");
             }
         });
         
+        // Carica immagini singole
+        imageUpload.addEventListener('change', function(e) {
+            const files = e.target.files;
+            if (files.length === 0) return;
+            
+            // Aggiungi alle immagini esistenti
+            addImages(files);
+        });
+        
+        // Carica audio personalizzato
+        audioUpload.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            audioBlob = file;
+            audioElement.src = URL.createObjectURL(file);
+            document.querySelector('#song-info p:last-child').textContent = `Canzone caricata: ${file.name}`;
+        });
+        
+        // Mostra l'immagine corrente
         function showCurrentImage() {
             const container = document.getElementById('image-container');
             container.innerHTML = `<img src="${images[currentImageIndex]}" alt="Slide ${currentImageIndex + 1}">`;
         }
         
-        document.getElementById('generate-btn').addEventListener('click', async function() {
+        // Azzera tutto
+        clearBtn.addEventListener('click', function() {
+            images.length = 0;
+            currentImageIndex = 0;
+            imageUpload.value = '';
+            zipUpload.value = '';
+            document.getElementById('image-container').innerHTML = '<p style="color: white;">L\'anteprima del video apparirà qui</p>';
+            updateImageCount();
+            progressContainer.style.display = 'none';
+            downloadBtn.disabled = true;
+        });
+        
+        // Genera il video
+        generateBtn.addEventListener('click', async function() {
             if (images.length === 0) {
                 alert('Per favore, carica prima delle immagini.');
                 return;
             }
             
             if (!audioBlob) {
-                alert('La canzone non è ancora caricata. Attendere...');
+                alert('Per favore, carica prima il file audio.');
                 return;
             }
             
-            document.getElementById('progress-container').style.display = 'block';
-            document.getElementById('generate-btn').disabled = true;
+            progressContainer.style.display = 'block';
+            generateBtn.disabled = true;
+            downloadBtn.disabled = true;
             
             const durationPerImage = parseInt(document.getElementById('duration').value) * 1000;
             const canvas = document.createElement('canvas');
@@ -228,15 +342,15 @@
             mediaRecorder.onstop = function() {
                 const blob = new Blob(recordedChunks, { type: 'video/webm' });
                 const url = URL.createObjectURL(blob);
-                document.getElementById('download-btn').disabled = false;
-                document.getElementById('download-btn').onclick = function() {
+                downloadBtn.disabled = false;
+                downloadBtn.onclick = function() {
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = 'video-per-la-mia-ragazza.webm';
                     a.click();
                 };
-                document.getElementById('progress-container').style.display = 'none';
-                document.getElementById('generate-btn').disabled = false;
+                progressContainer.style.display = 'none';
+                generateBtn.disabled = false;
             };
             
             mediaRecorder.start();
@@ -246,7 +360,6 @@
             audioElement.play();
             
             // Crea il video
-            let currentTime = 0;
             const totalImages = images.length;
             
             for (let i = 0; i < totalImages; i++) {
@@ -273,11 +386,11 @@
                         ctx.drawImage(img, 0, 0, img.width, img.height, 
                                     centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
                         
-                        // Aggiungi testo se vuoi
+                        // Aggiungi testo
                         ctx.fillStyle = 'white';
                         ctx.font = '30px Arial';
                         ctx.textAlign = 'center';
-                        ctx.fillText(`Slide ${i + 1} di ${totalImages}`, canvas.width/2, 50);
+                        ctx.fillText(`Foto ${i + 1} di ${totalImages}`, canvas.width/2, 50);
                         
                         resolve();
                     };
@@ -288,7 +401,7 @@
                 document.getElementById('progress-bar').value = progress;
             }
             
-            // Ferma la registrazione dopo un breve ritardo per assicurarti che l'ultima immagine sia inclusa
+            // Ferma la registrazione dopo un breve ritardo
             setTimeout(() => {
                 mediaRecorder.stop();
                 audioElement.pause();

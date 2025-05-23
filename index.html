@@ -333,16 +333,16 @@
             const reader = new FileReader();
             reader.onload = function(e) {
                 audioBlob = new Blob([e.target.result], { type: file.type });
-                audioElement.src = URL.createObjectURL(audioBlob);
+                audioElement = new Audio(URL.createObjectURL(audioBlob));
                 
                 // Quando i metadati sono caricati, otteniamo la durata
-                audioElement.onloadedmetadata = function() {
+                audioElement.addEventListener('loadedmetadata', function() {
                     audioDuration = audioElement.duration;
                     audioStatus.textContent = `File audio caricato: ${file.name}`;
                     audioDurationDisplay.textContent = `Durata audio: ${formatTime(audioDuration)}`;
                     audioStatus.style.color = '#4CAF50';
                     updateImageCount();
-                };
+                });
             };
             reader.readAsArrayBuffer(file);
         });
@@ -411,8 +411,27 @@
             canvas.height = 720; // Altezza HD
             const ctx = canvas.getContext('2d');
             
+            // Pre-carica tutte le immagini
+            const loadedImages = [];
+            for (const imgSrc of images) {
+                const img = new Image();
+                await new Promise(resolve => {
+                    img.onload = resolve;
+                    img.src = imgSrc;
+                });
+                loadedImages.push(img);
+            }
+            
             const stream = canvas.captureStream();
             mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+            
+            // Aggiungi la traccia audio al video
+            if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+                mediaRecorder = new MediaRecorder(stream, { 
+                    mimeType: 'video/webm;codecs=vp9,opus',
+                    audioBitsPerSecond: 128000
+                });
+            }
             
             recordedChunks = [];
             mediaRecorder.ondataavailable = function(e) {
@@ -442,41 +461,28 @@
             audioElement.play();
             
             // Crea il video
-            const totalImages = images.length;
+            const totalImages = loadedImages.length;
             
             for (let i = 0; i < totalImages; i++) {
-                if (i > 0) {
-                    // Aspetta il tempo stabilito prima di passare all'immagine successiva
+                const img = loadedImages[i];
+                
+                // Disegna l'immagine sul canvas mantenendo le proporzioni
+                const hRatio = canvas.width / img.width;
+                const vRatio = canvas.height / img.height;
+                const ratio = Math.min(hRatio, vRatio);
+                const centerShiftX = (canvas.width - img.width * ratio) / 2;
+                const centerShiftY = (canvas.height - img.height * ratio) / 2;
+                
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'black';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, img.width, img.height, 
+                            centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
+                
+                // Aspetta il tempo stabilito prima di passare all'immagine successiva
+                if (i < totalImages - 1) {
                     await new Promise(resolve => setTimeout(resolve, durationPerImage));
                 }
-                
-                currentImageIndex = i;
-                const img = new Image();
-                img.src = images[i];
-                await new Promise(resolve => {
-                    img.onload = function() {
-                        // Disegna l'immagine sul canvas mantenendo le proporzioni
-                        const hRatio = canvas.width / img.width;
-                        const vRatio = canvas.height / img.height;
-                        const ratio = Math.min(hRatio, vRatio);
-                        const centerShiftX = (canvas.width - img.width * ratio) / 2;
-                        const centerShiftY = (canvas.height - img.height * ratio) / 2;
-                        
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.fillStyle = 'black';
-                        ctx.fillRect(0, 0, canvas.width, canvas.height);
-                        ctx.drawImage(img, 0, 0, img.width, img.height, 
-                                    centerShiftX, centerShiftY, img.width * ratio, img.height * ratio);
-                        
-                        // Aggiungi testo
-                        ctx.fillStyle = 'white';
-                        ctx.font = '30px Arial';
-                        ctx.textAlign = 'center';
-                        ctx.fillText(`Foto ${i + 1} di ${totalImages}`, canvas.width/2, 50);
-                        
-                        resolve();
-                    };
-                });
                 
                 // Aggiorna la barra di progresso
                 const progress = ((i + 1) / totalImages) * 100;
@@ -487,7 +493,7 @@
             setTimeout(() => {
                 mediaRecorder.stop();
                 audioElement.pause();
-            }, 1000);
+            }, durationPerImage);
         });
     </script>
 </body>

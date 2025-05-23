@@ -131,12 +131,28 @@
             font-weight: bold;
             color: #4CAF50;
         }
+        #audio-controls {
+            margin-top: 15px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+        #auto-calculate {
+            background-color: #2196F3;
+        }
+        #auto-calculate:hover {
+            background-color: #0b7dda;
+        }
+        #audio-duration {
+            font-weight: bold;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Crea un video per la tua ragazza</h1>
-        <p>Carica le tue immagini (singole o in ZIP) e crea un video con "Le tasche piene di sassi" di Jovanotti</p>
+        <p>Carica le tue immagini (singole o in ZIP) e un file audio per creare un video personalizzato</p>
         
         <div id="preview">
             <div id="image-container">
@@ -154,26 +170,29 @@
         
         <div id="image-count">0 immagini caricate</div>
         
-        <div id="controls">
-            <button id="generate-btn" disabled>Genera Video</button>
-            <button id="download-btn" disabled>Scarica Video</button>
-            <button id="clear-btn">Azzera Tutto</button>
+        <div id="audio-controls">
+            <label for="audio-upload" class="custom-file-upload">Carica Audio</label>
+            <input id="audio-upload" type="file" accept="audio/*">
+            <button id="auto-calculate" disabled>Calcola Durata Automatica</button>
         </div>
+        
+        <div id="audio-status">Nessun file audio caricato</div>
+        <div id="audio-duration"></div>
         
         <div id="timing-controls">
             <label for="duration">Durata per immagine (secondi):</label>
             <input type="number" id="duration" value="3" min="1" max="10">
         </div>
         
+        <div id="controls">
+            <button id="generate-btn" disabled>Genera Video</button>
+            <button id="download-btn" disabled>Scarica Video</button>
+            <button id="clear-btn">Azzera Tutto</button>
+        </div>
+        
         <div id="progress-container">
             <p>Generazione del video in corso...</p>
             <progress id="progress-bar" value="0" max="100"></progress>
-        </div>
-        
-        <div id="song-info">
-            <p>Carica il tuo file audio MP3:</p>
-            <input type="file" id="audio-upload" accept="audio/*">
-            <div id="audio-status">Nessun file audio caricato</div>
         </div>
     </div>
 
@@ -185,6 +204,7 @@
         let recordedChunks = [];
         let audioBlob = null;
         let audioElement = new Audio();
+        let audioDuration = 0;
         
         // Elementi UI
         const imageUpload = document.getElementById('image-upload');
@@ -193,14 +213,17 @@
         const generateBtn = document.getElementById('generate-btn');
         const downloadBtn = document.getElementById('download-btn');
         const clearBtn = document.getElementById('clear-btn');
+        const autoCalculateBtn = document.getElementById('auto-calculate');
         const imageCount = document.getElementById('image-count');
         const progressContainer = document.getElementById('progress-container');
         const audioStatus = document.getElementById('audio-status');
+        const audioDurationDisplay = document.getElementById('audio-duration');
         
         // Aggiorna il conteggio immagini
         function updateImageCount() {
             imageCount.textContent = `${images.length} immagini caricate`;
             generateBtn.disabled = images.length === 0 || audioBlob === null;
+            autoCalculateBtn.disabled = images.length === 0 || audioBlob === null;
         }
         
         // Aggiungi immagini all'array
@@ -311,11 +334,34 @@
             reader.onload = function(e) {
                 audioBlob = new Blob([e.target.result], { type: file.type });
                 audioElement.src = URL.createObjectURL(audioBlob);
-                audioStatus.textContent = `File audio caricato: ${file.name}`;
-                audioStatus.style.color = '#4CAF50';
-                updateImageCount();
+                
+                // Quando i metadati sono caricati, otteniamo la durata
+                audioElement.onloadedmetadata = function() {
+                    audioDuration = audioElement.duration;
+                    audioStatus.textContent = `File audio caricato: ${file.name}`;
+                    audioDurationDisplay.textContent = `Durata audio: ${formatTime(audioDuration)}`;
+                    audioStatus.style.color = '#4CAF50';
+                    updateImageCount();
+                };
             };
             reader.readAsArrayBuffer(file);
+        });
+        
+        // Formatta il tempo in minuti:secondi
+        function formatTime(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+        }
+        
+        // Calcola automaticamente la durata per immagine in base alla durata dell'audio
+        autoCalculateBtn.addEventListener('click', function() {
+            if (images.length === 0 || audioDuration === 0) return;
+            
+            const durationPerImage = audioDuration / images.length;
+            document.getElementById('duration').value = Math.max(1, Math.min(10, Math.round(durationPerImage * 10) / 10));
+            
+            alert(`Durata automatica calcolata: ${document.getElementById('duration').value} secondi per immagine`);
         });
         
         // Mostra l'immagine corrente
@@ -332,9 +378,11 @@
             zipUpload.value = '';
             audioUpload.value = '';
             audioBlob = null;
+            audioDuration = 0;
             audioElement.src = '';
             document.getElementById('image-container').innerHTML = '<p style="color: white;">L\'anteprima del video apparirà qui</p>';
             audioStatus.textContent = 'Nessun file audio caricato';
+            audioDurationDisplay.textContent = '';
             audioStatus.style.color = '#555';
             updateImageCount();
             progressContainer.style.display = 'none';
